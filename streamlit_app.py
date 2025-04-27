@@ -664,7 +664,9 @@ page = st.sidebar.radio("Navigate", [
     "Verify UTR", 
     "File Malware Scan",
     "QR Scanner",
-    "Fraud Detection"
+    "Fraud Detection",
+    "Train",
+    "Phishing Detection"
 ])
 
 # --- Style Functions ---
@@ -1017,44 +1019,35 @@ elif page == "Verify UTR":
                         if response.status_code == 200:
                             result = response.json()
                             transaction = result.get("transaction", {})
-                            is_fraud = transaction.get("is_fraud", False)
-                            
-                            if is_fraud:
+                            fraud_label = transaction.get("fraud_label", "Safe")
+
+                            if fraud_label == "Fraud":
                                 st.error("""
                                 ## 🚨 Fraudulent Transaction Detected!
-                                **Recommendation:** Do not proceed with this transaction
+                                *Recommendation:* Do not proceed with this transaction
                                 """)
                                 st.snow()
                             else:
                                 st.success("""
                                 ## ✅ Legitimate Transaction
-                                **Status:** This transaction appears to be safe
+                                *Status:* This transaction appears to be safe
                                 """)
                                 st.balloons()
                             
                             with st.expander("Transaction Details"):
                                 st.json(transaction)
-                            
-                            # Show sender/receiver info if available
-                            for role in ["sender", "receiver"]:
-                                upi = transaction.get(f"{role}_upi")
-                                if upi:
-                                    try:
-                                        user_response = requests.get(
-                                            f"{BASE_URL}/user_by_upi", 
-                                            params={"upi_id": upi},
-                                            timeout=5
-                                        )
-                                        if user_response.status_code == 200:
-                                            with st.expander(f"{role.capitalize()} Information"):
-                                                st.json(user_response.json().get("user", {}))
-                                    except requests.exceptions.RequestException:
-                                        pass
+
+                        elif response.status_code == 404:
+                            st.error("""
+                            ## 🚨 Fake Transaction Detected!
+                            *Warning:* UTR ID not found in database. Highly unsafe transaction!
+                            """)
+                            st.snow()
                         else:
-                            st.error("Failed to verify UTR. Please try again.")
+                            st.error(f"Failed to verify UTR: {response.json().get('error', 'Unknown error')}")
+                            
                 except requests.exceptions.RequestException as e:
                     st.error(f"Connection error: {str(e)}")
-
 # --- File Malware Scan ---
 elif page == "File Malware Scan":
     set_custom_style()
@@ -1374,6 +1367,105 @@ if page == "Fraud Detection":
                         st.write("- Valid Indian phone number")
                     if amount <= 50000:
                         st.write("- Normal transaction amount")
+
+
+import upi_fraud
+if page=="Train":
+    upi_fraud.main()
+    upi_fraud.accuracy_score()
+    upi_fraud.extract_upi_domain()
+    upi_fraud.confusion_matrix()
+    upi_fraud.classification_report()
+    upi_fraud.train_model()
+    upi_fraud.save_model()
+    upi_fraud.load_model()
+    upi_fraud.preprocess_data()
+    upi_fraud.load_data()
+    upi_fraud.train_test_split()
+    upi_fraud.RandomForestClassifier()
+
+import streamlit as st
+import google.generativeai as genai
+import json
+import os
+from dotenv import load_dotenv
+
+
+if page == "Phishing Detection":
+    # Load environment variables
+    load_dotenv()
+
+    # Configure Gemini
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+    # Specify the new model
+    model_name = 'gemini-1.5-flash'
+    try:
+        model = genai.GenerativeModel(model_name)
+        st.info(f"Using model: {model_name}")
+    except Exception as e:
+        st.error(f"Error loading model '{model_name}': {e}")
+        st.stop()
+
+    def analyze_url(url):
+        """Analyze URL for phishing and return JSON output"""
+        prompt = f"""Analyze this URL for phishing risk: {url}
+        Respond with ONLY a valid JSON object containing:
+        - is_phishing (boolean)
+        - confidence (string: Low/Medium/High)
+        - reasons (array of strings)
+        - safe_to_visit (boolean)
+
+        Example output:
+        {{
+            "is_phishing": true,
+            "confidence": "High",
+            "reasons": [
+                "Misspelled domain name",
+                "No SSL certificate",
+                "Suspicious login form"
+            ],
+            "safe_to_visit": false
+        }}"""
+
+        try:
+            response = model.generate_content(prompt)
+            # Extract JSON from response
+            json_str = response.text.strip().replace('```json', '').replace('```', '')
+            return json.loads(json_str)
+        except Exception as e:
+            return {"error": str(e)}
+
+    # Streamlit UI for Phishing Detection page
+    st.title("🔒 Advanced Phishing Detector")
+    url = st.text_input("Enter URL to analyze:", placeholder="https://example.com")
+
+    if st.button("Analyze"):
+        if url:
+            with st.spinner("Scanning URL..."):
+                result = analyze_url(url)
+
+            st.subheader("Analysis Results")
+            if "error" in result:
+                st.error(f"Error: {result['error']}")
+            else:
+                st.json(result)
+
+                # Display formatted results
+                st.markdown("### Summary")
+                st.write(f"**Phishing Risk:** {'✅ Low' if not result['is_phishing'] else '❌ High'}")
+                st.write(f"**Confidence:** {result['confidence']}")
+                st.write(f"**Safe to Visit:** {'Yes' if result['safe_to_visit'] else 'No'}")
+
+                st.markdown("### Reasons")
+                for reason in result["reasons"]:
+                    st.write(f"- {reason}")
+        else:
+            st.warning("Please enter a URL")
+
+    st.caption("Note: Uses Google Gemini AI for phishing detection")
+
+
 # Load the dataset
 
     
